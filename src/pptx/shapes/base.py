@@ -44,6 +44,48 @@ class BaseShape(object):
             return True
         return self._element is not other._element
 
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this shape."""
+        return (
+            f"{type(self).__name__}(name='{self.name}'"
+            f", shape_id={self.shape_id}"
+            f", position=({self.left}, {self.top})"
+            f", size=({self.width}, {self.height}))"
+        )
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of this shape.
+
+        Useful for serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {
+            "shape_id": self.shape_id,
+            "name": self.name,
+            "left": int(self.left),
+            "top": int(self.top),
+            "width": int(self.width),
+            "height": int(self.height),
+        }
+        try:
+            d["shape_type"] = str(self.shape_type)
+        except NotImplementedError:
+            pass
+        if self.has_text_frame:
+            tf = getattr(self, "text_frame", None)
+            if tf is not None:
+                d["text"] = tf.text
+                d["text_frame"] = tf.to_dict()
+        if self.is_placeholder:
+            pf = self.placeholder_format
+            d["is_placeholder"] = True
+            d["placeholder_idx"] = pf.idx
+            d["placeholder_type"] = str(pf.type)
+        if self.has_table:
+            d["has_table"] = True
+        if self.has_chart:
+            d["has_chart"] = True
+        return d
+
     @lazyproperty
     def click_action(self) -> ActionSetting:
         """|ActionSetting| instance providing access to click behaviors.

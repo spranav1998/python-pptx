@@ -178,6 +178,38 @@ class Slide(_BaseSlide):
 
     part: SlidePart  # pyright: ignore[reportIncompatibleMethodOverride]
 
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this Slide."""
+        try:
+            slide_id = self.slide_id
+        except Exception:
+            slide_id = "?"
+        try:
+            name = self.name
+        except Exception:
+            name = "?"
+        try:
+            shape_count = len(self.shapes)
+        except Exception:
+            shape_count = "?"
+        return f"Slide(slide_id={slide_id}, name='{name}', shapes={shape_count})"
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of this slide and all its shapes.
+
+        Useful for serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {
+            "slide_id": self.slide_id,
+            "name": self.name,
+            "shapes": [shape.to_dict() for shape in self.shapes],
+        }
+        if self.has_notes_slide:
+            notes_tf = self.notes_slide.notes_text_frame
+            if notes_tf is not None and notes_tf.text:
+                d["notes"] = notes_tf.text
+        return d
+
     @property
     def follow_master_background(self):
         """|True| if this slide inherits the slide master background.
