@@ -43,8 +43,8 @@ class Presentation(PartElementProxy):
         """
         d: dict = {
             "slide_count": len(self.slides),
-            "slide_width": int(self.slide_width) if self.slide_width else None,
-            "slide_height": int(self.slide_height) if self.slide_height else None,
+            "slide_width": int(self.slide_width) if self.slide_width is not None else None,
+            "slide_height": int(self.slide_height) if self.slide_height is not None else None,
             "slides": [slide.to_dict() for slide in self.slides],
         }
         return d

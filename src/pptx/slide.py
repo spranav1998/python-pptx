@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Iterator, cast
 
 from pptx.dml.fill import FillFormat
 from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.exc import InvalidXmlError
 from pptx.shapes.shapetree import (
     LayoutPlaceholders,
     LayoutShapes,
@@ -182,15 +183,15 @@ class Slide(_BaseSlide):
         """Return a descriptive string representation of this Slide."""
         try:
             slide_id = self.slide_id
-        except Exception:
+        except (AttributeError, TypeError, InvalidXmlError):
             slide_id = "?"
         try:
             name = self.name
-        except Exception:
+        except (AttributeError, TypeError, InvalidXmlError):
             name = "?"
         try:
             shape_count = len(self.shapes)
-        except Exception:
+        except (AttributeError, TypeError, InvalidXmlError):
             shape_count = "?"
         return f"Slide(slide_id={slide_id}, name='{name}', shapes={shape_count})"
 
