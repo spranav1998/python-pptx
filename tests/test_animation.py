@@ -188,42 +188,42 @@ class DescribeSlide_add_animation:
         assert cTn.get("dur") == "500"
 
     def it_survives_a_save_load_roundtrip(self):
-        import io
+        """Verify animation XML persists through save/load cycle.
+
+        Uses a subprocess to avoid mock pollution from other test modules.
+        """
         import subprocess
         import sys
 
-        # Run roundtrip in a subprocess to avoid test mock pollution
-        code = """
-import io, sys
-from pptx import Presentation
-from pptx.enum.animation import PP_ANIMATION_TYPE
-from pptx.oxml.ns import qn
-
-prs = Presentation()
-slide = prs.slides.add_slide(prs.slide_layouts[1])
-slide.placeholders[0].text = "Roundtrip"
-slide.placeholders[1].text = "Body"
-slide.add_animation(slide.placeholders[0], PP_ANIMATION_TYPE.FADE, 1000)
-slide.add_animation(slide.placeholders[1], PP_ANIMATION_TYPE.WIPE_FROM_BOTTOM, 750)
-
-stream = io.BytesIO()
-prs.save(stream)
-stream.seek(0)
-
-prs2 = Presentation(stream)
-timing = prs2.slides[0]._element.timing
-assert timing is not None
-effects = timing.findall(".//" + qn("p:animEffect"))
-assert len(effects) == 2, f"Expected 2 effects, got {len(effects)}"
-print("ok")
-"""
         result = subprocess.run(
-            [sys.executable, "-c", code],
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import io\n"
+                    "from pptx import Presentation\n"
+                    "from pptx.enum.animation import PP_ANIMATION_TYPE\n"
+                    "from pptx.oxml.ns import qn\n"
+                    "prs = Presentation()\n"
+                    "slide = prs.slides.add_slide(prs.slide_layouts[1])\n"
+                    "slide.placeholders[0].text = 'Roundtrip'\n"
+                    "slide.placeholders[1].text = 'Body'\n"
+                    "slide.add_animation(slide.placeholders[0], PP_ANIMATION_TYPE.FADE, 1000)\n"
+                    "slide.add_animation(slide.placeholders[1], PP_ANIMATION_TYPE.WIPE_FROM_BOTTOM, 750)\n"
+                    "stream = io.BytesIO()\n"
+                    "prs.save(stream)\n"
+                    "stream.seek(0)\n"
+                    "prs2 = Presentation(stream)\n"
+                    "timing = prs2.slides[0]._element.timing\n"
+                    "assert timing is not None\n"
+                    "effects = timing.findall('.//' + qn('p:animEffect'))\n"
+                    "assert len(effects) == 2, f'Expected 2, got {len(effects)}'\n"
+                ),
+            ],
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, f"Subprocess failed: {result.stderr}"
-        assert "ok" in result.stdout
+        assert result.returncode == 0, f"Roundtrip failed: {result.stderr}"
 
     def it_raises_on_invalid_shape_type(self):
         prs = PresentationFactory()

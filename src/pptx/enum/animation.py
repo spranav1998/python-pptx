@@ -112,6 +112,3 @@ class PP_ANIMATION_TYPE(BaseXmlEnum):
         "Shape dissolves in gradually.",
     )
     """Shape dissolves in gradually."""
-
-
-PP_ANIMATION = PP_ANIMATION_TYPE
