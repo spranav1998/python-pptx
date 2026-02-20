@@ -165,6 +165,95 @@ class CT_Slide(_BaseSlideElement):
     timing = ZeroOrOne("p:timing", successors=_tag_seq[4:])
     del _tag_seq
 
+    def add_animation(self, shape_id: int, animation_type_xml: str, duration: int) -> None:
+        """Add an entrance animation for the shape identified by `shape_id`.
+
+        `animation_type_xml` is a string key from `_ANIMATION_FILTER_MAP`,
+        `duration` is in milliseconds.
+        """
+        existing_timing = self.timing
+        if existing_timing is None:
+            # No timing element yet — create a fresh one
+            timing_xml = _build_animation_timing_xml(shape_id, animation_type_xml, duration)
+            timing_el = parse_xml(timing_xml)
+            self._insert_timing(timing_el)
+        else:
+            # Add to existing mainSeq childTnLst
+            main_seq_childTnLst = self._get_or_add_main_seq_childTnLst()
+            next_id = self._next_cTn_id
+            par_xml = _build_animation_click_par_xml(
+                shape_id, animation_type_xml, duration, next_id
+            )
+            par_el = parse_xml(par_xml)
+            main_seq_childTnLst.append(par_el)
+
+    @property
+    def _next_cTn_id(self) -> int:
+        """Return the next available unique cTn ID across all timing nodes."""
+        from pptx.oxml.ns import qn
+
+        cTn_els = self.findall(".//" + qn("p:cTn"))
+        if not cTn_els:
+            return 1
+        ids = [int(el.get("id", "0")) for el in cTn_els]
+        return max(ids) + 1
+
+    def _get_or_add_main_seq_childTnLst(self):
+        """Return the `p:childTnLst` inside `p:seq[@nodeType='mainSeq']`.
+
+        Creates the full timing scaffold if it doesn't exist.
+        """
+        from pptx.oxml.ns import qn
+
+        # Look for existing mainSeq childTnLst
+        seq_els = self.findall(".//" + qn("p:seq"))
+        for seq_el in seq_els:
+            cTn = seq_el.find(qn("p:cTn"))
+            if cTn is not None and cTn.get("nodeType") == "mainSeq":
+                childTnLst = cTn.find(qn("p:childTnLst"))
+                if childTnLst is not None:
+                    return childTnLst
+        # If no mainSeq exists, create fresh timing scaffold
+        if self.timing is not None:
+            self.remove(self.timing)
+        timing_xml = (
+            "<p:timing %s>\n"
+            "  <p:tnLst>\n"
+            "    <p:par>\n"
+            '      <p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot">\n'
+            "        <p:childTnLst>\n"
+            '          <p:seq concurrent="1" nextAc="seek">\n'
+            '            <p:cTn id="2" dur="indefinite" nodeType="mainSeq">\n'
+            "              <p:childTnLst/>\n"
+            "            </p:cTn>\n"
+            "            <p:prevCondLst>\n"
+            '              <p:cond evt="onPrev" delay="0">\n'
+            "                <p:tgtEl>\n"
+            "                  <p:sldTgt/>\n"
+            "                </p:tgtEl>\n"
+            "              </p:cond>\n"
+            "            </p:prevCondLst>\n"
+            "            <p:nextCondLst>\n"
+            '              <p:cond evt="onNext" delay="0">\n'
+            "                <p:tgtEl>\n"
+            "                  <p:sldTgt/>\n"
+            "                </p:tgtEl>\n"
+            "              </p:cond>\n"
+            "            </p:nextCondLst>\n"
+            "          </p:seq>\n"
+            "        </p:childTnLst>\n"
+            "      </p:cTn>\n"
+            "    </p:par>\n"
+            "  </p:tnLst>\n"
+            "</p:timing>\n" % nsdecls("p")
+        )
+        timing_el = parse_xml(timing_xml)
+        self._insert_timing(timing_el)
+        childTnLst_els = self.findall(
+            ".//" + qn("p:seq") + "/" + qn("p:cTn") + "/" + qn("p:childTnLst")
+        )
+        return childTnLst_els[0]
+
     @classmethod
     def new(cls) -> CT_Slide:
         """Return new `p:sld` element configured as base slide shape."""
@@ -345,3 +434,210 @@ class CT_TLMediaNodeVideo(BaseOxmlElement):
     _tag_seq = ("p:cMediaNode",)
     cMediaNode = OneAndOnlyOne("p:cMediaNode")
     del _tag_seq
+
+
+# -- Animation filter mappings for OOXML `p:animEffect` element ---
+
+_ANIMATION_FILTER_MAP: dict[str, dict[str, str]] = {
+    "appear": {"filter": "", "transition": ""},
+    "fade": {"filter": "fade", "transition": "in"},
+    "fly_from_bottom": {"filter": "wipe(up)", "transition": "in"},
+    "fly_from_left": {"filter": "wipe(right)", "transition": "in"},
+    "fly_from_right": {"filter": "wipe(left)", "transition": "in"},
+    "fly_from_top": {"filter": "wipe(down)", "transition": "in"},
+    "wipe_from_bottom": {"filter": "wipe(up)", "transition": "in"},
+    "wipe_from_left": {"filter": "wipe(right)", "transition": "in"},
+    "wipe_from_right": {"filter": "wipe(left)", "transition": "in"},
+    "wipe_from_top": {"filter": "wipe(down)", "transition": "in"},
+    "split_h_out": {"filter": "barn(outHorizontal)", "transition": "in"},
+    "split_v_out": {"filter": "barn(outVertical)", "transition": "in"},
+    "wheel_1": {"filter": "wheel(1)", "transition": "in"},
+    "dissolve": {"filter": "dissolve", "transition": "in"},
+}
+
+
+def _build_animation_timing_xml(shape_id: int, animation_type_xml: str, duration: int) -> str:
+    """Build the full `p:timing` XML for an entrance animation on a shape.
+
+    `shape_id` identifies the target shape, `animation_type_xml` is a key
+    in `_ANIMATION_FILTER_MAP`, and `duration` is in milliseconds.
+    """
+    effect_info = _ANIMATION_FILTER_MAP[animation_type_xml]
+    filter_str = effect_info["filter"]
+
+    # Build the inner animation node(s)
+    if not filter_str:
+        # APPEAR animation - just set visibility, no p:animEffect
+        effect_nodes_xml = ""
+    else:
+        effect_nodes_xml = (
+            '                            <p:animEffect transition="%s" filter="%s">\n'
+            "                              <p:cBhvr>\n"
+            '                                <p:cTn id="6" dur="%d" fill="hold"/>\n'
+            "                                <p:tgtEl>\n"
+            '                                  <p:spTgt spid="%d"/>\n'
+            "                                </p:tgtEl>\n"
+            "                              </p:cBhvr>\n"
+            "                            </p:animEffect>\n"
+            % (
+                effect_info["transition"],
+                filter_str,
+                duration,
+                shape_id,
+            )
+        )
+
+    timing_xml = (
+        "<p:timing %s>\n"
+        "  <p:tnLst>\n"
+        "    <p:par>\n"
+        '      <p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot">\n'
+        "        <p:childTnLst>\n"
+        '          <p:seq concurrent="1" nextAc="seek">\n'
+        '            <p:cTn id="2" dur="indefinite" nodeType="mainSeq">\n'
+        "              <p:childTnLst>\n"
+        "                <p:par>\n"
+        '                  <p:cTn id="3" fill="hold">\n'
+        "                    <p:stCondLst>\n"
+        '                      <p:cond delay="indefinite"/>\n'
+        "                    </p:stCondLst>\n"
+        "                    <p:childTnLst>\n"
+        "                      <p:par>\n"
+        '                        <p:cTn id="4" fill="hold">\n'
+        "                          <p:stCondLst>\n"
+        '                            <p:cond delay="0"/>\n'
+        "                          </p:stCondLst>\n"
+        "                          <p:childTnLst>\n"
+        "                            <p:set>\n"
+        "                              <p:cBhvr>\n"
+        '                                <p:cTn id="5" dur="1" fill="hold">\n'
+        "                                  <p:stCondLst>\n"
+        '                                    <p:cond delay="0"/>\n'
+        "                                  </p:stCondLst>\n"
+        "                                </p:cTn>\n"
+        "                                <p:tgtEl>\n"
+        '                                  <p:spTgt spid="%d"/>\n'
+        "                                </p:tgtEl>\n"
+        "                                <p:attrNameLst>\n"
+        "                                  <p:attrName>style.visibility</p:attrName>\n"
+        "                                </p:attrNameLst>\n"
+        "                              </p:cBhvr>\n"
+        "                              <p:to>\n"
+        '                                <p:strVal val="visible"/>\n'
+        "                              </p:to>\n"
+        "                            </p:set>\n"
+        "%s"
+        "                          </p:childTnLst>\n"
+        "                        </p:cTn>\n"
+        "                      </p:par>\n"
+        "                    </p:childTnLst>\n"
+        "                  </p:cTn>\n"
+        "                </p:par>\n"
+        "              </p:childTnLst>\n"
+        "            </p:cTn>\n"
+        "            <p:prevCondLst>\n"
+        '              <p:cond evt="onPrev" delay="0">\n'
+        "                <p:tgtEl>\n"
+        "                  <p:sldTgt/>\n"
+        "                </p:tgtEl>\n"
+        "              </p:cond>\n"
+        "            </p:prevCondLst>\n"
+        "            <p:nextCondLst>\n"
+        '              <p:cond evt="onNext" delay="0">\n'
+        "                <p:tgtEl>\n"
+        "                  <p:sldTgt/>\n"
+        "                </p:tgtEl>\n"
+        "              </p:cond>\n"
+        "            </p:nextCondLst>\n"
+        "          </p:seq>\n"
+        "        </p:childTnLst>\n"
+        "      </p:cTn>\n"
+        "    </p:par>\n"
+        "  </p:tnLst>\n"
+        "</p:timing>\n"
+        % (nsdecls("p"), shape_id, effect_nodes_xml)
+    )
+
+    return timing_xml
+
+
+def _build_animation_click_par_xml(
+    shape_id: int, animation_type_xml: str, duration: int, start_cTn_id: int
+) -> str:
+    """Build a `p:par` XML fragment for one click-animation sequence item.
+
+    Used when adding an animation to a slide that already has animations.
+    `start_cTn_id` should be the next available cTn id.
+    """
+    effect_info = _ANIMATION_FILTER_MAP[animation_type_xml]
+    filter_str = effect_info["filter"]
+
+    # Allocate cTn IDs: outer par, inner par, set's cTn, (optionally) animEffect's cTn
+    id_outer_par = start_cTn_id
+    id_inner_par = start_cTn_id + 1
+    id_set_ctn = start_cTn_id + 2
+
+    if not filter_str:
+        effect_nodes_xml = ""
+    else:
+        id_anim_ctn = start_cTn_id + 3
+        effect_nodes_xml = (
+            '                            <p:animEffect transition="%s" filter="%s">\n'
+            "                              <p:cBhvr>\n"
+            '                                <p:cTn id="%d" dur="%d" fill="hold"/>\n'
+            "                                <p:tgtEl>\n"
+            '                                  <p:spTgt spid="%d"/>\n'
+            "                                </p:tgtEl>\n"
+            "                              </p:cBhvr>\n"
+            "                            </p:animEffect>\n"
+            % (
+                effect_info["transition"],
+                filter_str,
+                id_anim_ctn,
+                duration,
+                shape_id,
+            )
+        )
+
+    par_xml = (
+        "<p:par %s>\n"
+        '  <p:cTn id="%d" fill="hold">\n'
+        "    <p:stCondLst>\n"
+        '      <p:cond delay="indefinite"/>\n'
+        "    </p:stCondLst>\n"
+        "    <p:childTnLst>\n"
+        "      <p:par>\n"
+        '        <p:cTn id="%d" fill="hold">\n'
+        "          <p:stCondLst>\n"
+        '            <p:cond delay="0"/>\n'
+        "          </p:stCondLst>\n"
+        "          <p:childTnLst>\n"
+        "            <p:set>\n"
+        "              <p:cBhvr>\n"
+        '                <p:cTn id="%d" dur="1" fill="hold">\n'
+        "                  <p:stCondLst>\n"
+        '                    <p:cond delay="0"/>\n'
+        "                  </p:stCondLst>\n"
+        "                </p:cTn>\n"
+        "                <p:tgtEl>\n"
+        '                  <p:spTgt spid="%d"/>\n'
+        "                </p:tgtEl>\n"
+        "                <p:attrNameLst>\n"
+        "                  <p:attrName>style.visibility</p:attrName>\n"
+        "                </p:attrNameLst>\n"
+        "              </p:cBhvr>\n"
+        "              <p:to>\n"
+        '                <p:strVal val="visible"/>\n'
+        "              </p:to>\n"
+        "            </p:set>\n"
+        "%s"
+        "          </p:childTnLst>\n"
+        "        </p:cTn>\n"
+        "      </p:par>\n"
+        "    </p:childTnLst>\n"
+        "  </p:cTn>\n"
+        "</p:par>\n"
+        % (nsdecls("p"), id_outer_par, id_inner_par, id_set_ctn, shape_id, effect_nodes_xml)
+    )
+
+    return par_xml
