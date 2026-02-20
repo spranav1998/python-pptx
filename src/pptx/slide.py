@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Iterator, cast
 
 from pptx.dml.fill import FillFormat
 from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.exc import InvalidXmlError
 from pptx.shapes.shapetree import (
     LayoutPlaceholders,
     LayoutShapes,
@@ -20,6 +21,7 @@ from pptx.shared import ElementProxy, ParentedElementProxy, PartElementProxy
 from pptx.util import lazyproperty
 
 if TYPE_CHECKING:
+    from pptx.enum.animation import PP_ANIMATION_TYPE
     from pptx.oxml.presentation import CT_SlideIdList, CT_SlideMasterIdList
     from pptx.oxml.slide import (
         CT_CommonSlideData,
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from pptx.parts.presentation import PresentationPart
     from pptx.parts.slide import SlideLayoutPart, SlideMasterPart, SlidePart
     from pptx.presentation import Presentation
+    from pptx.shapes.base import BaseShape
     from pptx.shapes.placeholder import LayoutPlaceholder, MasterPlaceholder
     from pptx.shapes.shapetree import NotesSlidePlaceholder
     from pptx.text.text import TextFrame
@@ -177,6 +180,68 @@ class Slide(_BaseSlide):
     """Slide object. Provides access to shapes and slide-level properties."""
 
     part: SlidePart  # pyright: ignore[reportIncompatibleMethodOverride]
+
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this Slide."""
+        try:
+            slide_id = self.slide_id
+        except (AttributeError, TypeError, InvalidXmlError):
+            slide_id = "?"
+        try:
+            name = self.name
+        except (AttributeError, TypeError, InvalidXmlError):
+            name = "?"
+        try:
+            shape_count = len(self.shapes)
+        except (AttributeError, TypeError, InvalidXmlError):
+            shape_count = "?"
+        return f"Slide(slide_id={slide_id}, name='{name}', shapes={shape_count})"
+
+    def add_animation(
+        self,
+        shape: "BaseShape",
+        animation_type: "PP_ANIMATION_TYPE",
+        duration: int = 500,
+    ) -> None:
+        """Add an entrance animation to `shape` on this slide.
+
+        `shape` is a shape object on this slide to animate. `animation_type` is a member
+        of :ref:`PP_ANIMATION_TYPE`, such as ``PP_ANIMATION_TYPE.FADE``. `duration` is the
+        animation duration in milliseconds (default 500ms).
+
+        Example::
+
+            from pptx.enum.animation import PP_ANIMATION_TYPE
+
+            slide.add_animation(shape, PP_ANIMATION_TYPE.FADE, duration=1000)
+        """
+        from pptx.enum.animation import PP_ANIMATION_TYPE
+        from pptx.shapes.base import BaseShape
+
+        if not isinstance(shape, BaseShape):
+            raise TypeError("shape must be a BaseShape instance")
+        if not isinstance(animation_type, PP_ANIMATION_TYPE):
+            raise TypeError("animation_type must be a PP_ANIMATION_TYPE member")
+        if duration < 0:
+            raise ValueError("duration must be non-negative")
+
+        self._element.add_animation(shape.shape_id, animation_type.xml_value, duration)
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of this slide and all its shapes.
+
+        Useful for serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {
+            "slide_id": self.slide_id,
+            "name": self.name,
+            "shapes": [shape.to_dict() for shape in self.shapes],
+        }
+        if self.has_notes_slide:
+            notes_tf = self.notes_slide.notes_text_frame
+            if notes_tf is not None and notes_tf.text:
+                d["notes"] = notes_tf.text
+        return d
 
     @property
     def follow_master_background(self):

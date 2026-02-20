@@ -25,6 +25,30 @@ class Presentation(PartElementProxy):
     _element: CT_Presentation
     part: PresentationPart  # pyright: ignore[reportIncompatibleMethodOverride]
 
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this Presentation."""
+        width = self.slide_width
+        height = self.slide_height
+        return (
+            f"Presentation(slides={len(self.slides)}"
+            f", slide_width={width}"
+            f", slide_height={height})"
+        )
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of the entire presentation.
+
+        Includes all slides, their shapes, and text content. Useful for
+        serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {
+            "slide_count": len(self.slides),
+            "slide_width": int(self.slide_width) if self.slide_width is not None else None,
+            "slide_height": int(self.slide_height) if self.slide_height is not None else None,
+            "slides": [slide.to_dict() for slide in self.slides],
+        }
+        return d
+
     @property
     def core_properties(self):
         """|CoreProperties| instance for this presentation.

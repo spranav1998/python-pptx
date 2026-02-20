@@ -45,6 +45,28 @@ class TextFrame(Subshape):
         self._element = self._txBody = txBody
         self._parent = parent
 
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this TextFrame."""
+        text = self.text
+        if len(text) > 50:
+            text = text[:47] + "..."
+        return f"TextFrame(text='{text}', paragraphs={len(self.paragraphs)})"
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of this TextFrame.
+
+        Useful for serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {
+            "text": self.text,
+            "paragraphs": [p.to_dict() for p in self.paragraphs],
+        }
+        if self.word_wrap is not None:
+            d["word_wrap"] = self.word_wrap
+        if self.auto_size is not None:
+            d["auto_size"] = str(self.auto_size)
+        return d
+
     def add_paragraph(self):
         """
         Return new |_Paragraph| instance appended to the sequence of
@@ -288,6 +310,32 @@ class Font(object):
         super(Font, self).__init__()
         self._element = self._rPr = rPr
 
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this Font."""
+        size_str = f"{self.size.pt}pt" if self.size is not None else "inherit"
+        return (
+            f"Font(name='{self.name}', size={size_str}"
+            f", bold={self.bold}, italic={self.italic})"
+        )
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of this Font's properties.
+
+        Useful for serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {}
+        if self.name is not None:
+            d["name"] = self.name
+        if self.size is not None:
+            d["size_pt"] = self.size.pt
+        if self.bold is not None:
+            d["bold"] = self.bold
+        if self.italic is not None:
+            d["italic"] = self.italic
+        if self.underline is not None:
+            d["underline"] = bool(self.underline)
+        return d
+
     @property
     def bold(self) -> bool | None:
         """Get or set boolean bold value of |Font|, e.g. `paragraph.font.bold = True`.
@@ -471,6 +519,28 @@ class _Paragraph(Subshape):
         super(_Paragraph, self).__init__(parent)
         self._element = self._p = p
 
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this Paragraph."""
+        text = self.text
+        if len(text) > 50:
+            text = text[:47] + "..."
+        return f"_Paragraph(text='{text}', level={self.level})"
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of this Paragraph.
+
+        Useful for serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {"text": self.text}
+        if self.level != 0:
+            d["level"] = self.level
+        if self.alignment is not None:
+            d["alignment"] = str(self.alignment)
+        runs = self.runs
+        if runs:
+            d["runs"] = [run.to_dict() for run in runs]
+        return d
+
     def add_line_break(self):
         """Add line break at end of this paragraph."""
         self._p.add_br()
@@ -638,6 +708,24 @@ class _Run(Subshape):
     def __init__(self, r: CT_RegularTextRun, parent: ProvidesPart):
         super(_Run, self).__init__(parent)
         self._r = r
+
+    def __repr__(self) -> str:
+        """Return a descriptive string representation of this Run."""
+        text = self.text
+        if len(text) > 30:
+            text = text[:27] + "..."
+        return f"_Run(text='{text}')"
+
+    def to_dict(self) -> dict:
+        """Return a dictionary representation of this Run.
+
+        Useful for serialization, inspection, and LLM-based workflows.
+        """
+        d: dict = {"text": self.text}
+        font_dict = self.font.to_dict()
+        if font_dict:
+            d["font"] = font_dict
+        return d
 
     @property
     def font(self):
